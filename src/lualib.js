@@ -13,7 +13,7 @@ module.exports.lua_assert = function(c) {};
 const luabaselib = require("./lbaselib.js");
 
 module.exports.luaopen_base = luabaselib.luaopen_base;
-module.exports.luaopen_base = luabaselib.luaopen_restricted;
+module.exports.luaopen_restricted = luabaselib.luaopen_restricted;
 
 const LUA_TABLIBNAME = "table";
 module.exports.LUA_TABLIBNAME = LUA_TABLIBNAME;
