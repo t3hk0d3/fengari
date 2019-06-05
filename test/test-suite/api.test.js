@@ -26,22 +26,6 @@ const prefix = `
     end
 `;
 
-test("[test-suite] api: registry", () => {
-    let L = lauxlib.luaL_newstate();
-    if (!L) throw Error("failed to create lua state");
-
-    let luaCode = `
-        a = T.testC("pushvalue R; return 1")
-        assert(a == debug.getregistry())
-    `;
-    lualib.luaL_openlibs(L);
-    ltests.luaopen_tests(L);
-    if (lauxlib.luaL_loadstring(L, to_luastring(prefix + luaCode)) === lua.LUA_ERRSYNTAX)
-        throw new SyntaxError(lua.lua_tojsstring(L, -1));
-    lua.lua_call(L, 0, 0);
-});
-
-
 test("[test-suite] api: absindex", () => {
     let L = lauxlib.luaL_newstate();
     if (!L) throw Error("failed to create lua state");
@@ -491,7 +475,6 @@ test("[test-suite] api: testing lua_is", () => {
         assert(count(print) == 2)
         assert(count(function () end) == 1)
         assert(count(nil) == 1)
-        assert(count(io.stdin) == 1)
         assert(count(nil, 15) == 100)
     `;
     lualib.luaL_openlibs(L);
@@ -513,7 +496,6 @@ test("[test-suite] api: testing lua_to...", () => {
         end
 
         local hfunc = string.gmatch("", "")    -- a "heavy C function" (with upvalues)
-        assert(debug.getupvalue(hfunc, 1))
         assert(to("tostring", {}) == nil)
         assert(to("tostring", "alo") == "alo")
         assert(to("tostring", 12) == "12")
@@ -532,13 +514,10 @@ test("[test-suite] api: testing lua_to...", () => {
         assert(to("topointer", 10) == 0)
         assert(to("topointer", true) == 0)
         assert(to("topointer", T.pushuserdata(20)) == 20)
-        --assert(to("topointer", io.read) ~= 0)           -- light C function
         assert(to("topointer", hfunc) ~= 0)        -- "heavy" C function
         assert(to("topointer", function () end) ~= 0)   -- Lua function
-        assert(to("topointer", io.stdin) ~= 0)   -- full userdata
         assert(to("func2num", 20) == 0)
         assert(to("func2num", T.pushuserdata(10)) == 0)
-        -- assert(to("func2num", io.read) ~= 0)     -- light C function
         assert(to("func2num", hfunc) ~= 0)  -- "heavy" C function (with upvalue)
         a = to("tocfunction", math.deg)
         assert(a(3) == math.deg(3) and a == math.deg)
@@ -671,33 +650,6 @@ test("[test-suite] api: testing errors", () => {
         throw new SyntaxError(lua.lua_tojsstring(L, -1));
     lua.lua_call(L, 0, 0);
 });
-
-
-test("[test-suite] api: test errors in non protected threads", () => {
-    let L = lauxlib.luaL_newstate();
-    if (!L) throw Error("failed to create lua state");
-
-    let luaCode = `
-        function checkerrnopro (code, msg)
-          local th = coroutine.create(function () end)  -- create new thread
-          local stt, err = pcall(T.testC, th, code)   -- run code there
-          assert(not stt and string.find(err, msg))
-        end
-
-        if not _soft then
-          checkerrnopro("pushnum 3; call 0 0", "attempt to call")
-          -- print"testing stack overflow in unprotected thread"
-          function f () f() end
-          checkerrnopro("getglobal 'f'; call 0 0;", "stack overflow")
-        end
-    `;
-    lualib.luaL_openlibs(L);
-    ltests.luaopen_tests(L);
-    if (lauxlib.luaL_loadstring(L, to_luastring(prefix + luaCode)) === lua.LUA_ERRSYNTAX)
-        throw new SyntaxError(lua.lua_tojsstring(L, -1));
-    lua.lua_call(L, 0, 0);
-});
-
 
 test("[test-suite] api: testing table access", () => {
     let L = lauxlib.luaL_newstate();
@@ -876,86 +828,6 @@ test("[test-suite] api: large closures", () => {
     lua.lua_call(L, 0, 0);
 });
 
-
-test("[test-suite] api: testing get/setuservalue", () => {
-    let L = lauxlib.luaL_newstate();
-    if (!L) throw Error("failed to create lua state");
-
-    let luaCode = `
-        -- bug in 5.1.2
-        checkerr("got number", debug.setuservalue, 3, {})
-        checkerr("got nil", debug.setuservalue, nil, {})
-        checkerr("got light userdata", debug.setuservalue, T.pushuserdata(1), {})
-
-        local b = T.newuserdata(0)
-        assert(debug.getuservalue(b) == nil)
-        for _, v in pairs{true, false, 4.56, print, {}, b, "XYZ"} do
-          assert(debug.setuservalue(b, v) == b)
-          assert(debug.getuservalue(b) == v)
-        end
-
-        assert(debug.getuservalue(4) == nil)
-
-        debug.setuservalue(b, function () return 10 end)
-        -- collectgarbage()   -- function should not be collected
-        assert(debug.getuservalue(b)() == 10)
-
-        debug.setuservalue(b, 134)
-        -- collectgarbage()   -- number should not be a problem for collector
-        assert(debug.getuservalue(b) == 134)
-    `;
-    lualib.luaL_openlibs(L);
-    ltests.luaopen_tests(L);
-    if (lauxlib.luaL_loadstring(L, to_luastring(prefix + luaCode)) === lua.LUA_ERRSYNTAX)
-        throw new SyntaxError(lua.lua_tojsstring(L, -1));
-    lua.lua_call(L, 0, 0);
-});
-
-
-test.skip("[test-suite] api: testing get/setuservalue", () => {
-    let L = lauxlib.luaL_newstate();
-    if (!L) throw Error("failed to create lua state");
-
-    let luaCode = `
-        T.gcstate("atomic")
-        assert(T.gccolor(b) == "black")
-        debug.setuservalue(b, {x = 100})
-        T.gcstate("pause")  -- complete collection
-        assert(debug.getuservalue(b).x == 100)  -- uvalue should be there
-    `;
-    lualib.luaL_openlibs(L);
-    ltests.luaopen_tests(L);
-    if (lauxlib.luaL_loadstring(L, to_luastring(prefix + luaCode)) === lua.LUA_ERRSYNTAX)
-        throw new SyntaxError(lua.lua_tojsstring(L, -1));
-    lua.lua_call(L, 0, 0);
-});
-
-
-test.skip("[test-suite] api: long chain of userdata", () => {
-    let L = lauxlib.luaL_newstate();
-    if (!L) throw Error("failed to create lua state");
-
-    let luaCode = `
-        for i = 1, 1000 do
-          local bb = T.newuserdata(0)
-          debug.setuservalue(bb, b)
-          b = bb
-        end
-        -- collectgarbage()     -- nothing should not be collected
-        for i = 1, 1000 do
-          b = debug.getuservalue(b)
-        end
-        assert(debug.getuservalue(b).x == 100)
-        b = nil
-    `;
-    lualib.luaL_openlibs(L);
-    ltests.luaopen_tests(L);
-    if (lauxlib.luaL_loadstring(L, to_luastring(prefix + luaCode)) === lua.LUA_ERRSYNTAX)
-        throw new SyntaxError(lua.lua_tojsstring(L, -1));
-    lua.lua_call(L, 0, 0);
-});
-
-
 test.skip("[test-suite] api: reuse of references", () => {
     let L = lauxlib.luaL_newstate();
     if (!L) throw Error("failed to create lua state");
@@ -1015,167 +887,6 @@ test.skip("[test-suite] api: reuse of references", () => {
     lua.lua_call(L, 0, 0);
 });
 
-
-test.skip("[test-suite] api: collect in cl the `val' of all collected userdata", () => {
-    let L = lauxlib.luaL_newstate();
-    if (!L) throw Error("failed to create lua state");
-
-    let luaCode = `
-        tt = {}
-        cl = {n=0}
-        A = nil; B = nil
-        local F
-        F = function (x)
-          local udval = T.udataval(x)
-          table.insert(cl, udval)
-          local d = T.newuserdata(100)   -- cria lixo
-          d = nil
-          assert(debug.getmetatable(x).__gc == F)
-          assert(load("table.insert({}, {})"))()   -- cria mais lixo
-          collectgarbage()   -- forca coleta de lixo durante coleta!
-          assert(debug.getmetatable(x).__gc == F)   -- coleta anterior nao melou isso?
-          local dummy = {}    -- cria lixo durante coleta
-          if A ~= nil then
-            assert(type(A) == "userdata")
-            assert(T.udataval(A) == B)
-            debug.getmetatable(A)    -- just acess it
-          end
-          A = x   -- ressucita userdata
-          B = udval
-          return 1,2,3
-        end
-        tt.__gc = F
-
-        collectgarbage("stop")
-
-        -- create 3 userdatas with tag 'tt'
-        a = T.newuserdata(0); debug.setmetatable(a, tt); na = T.udataval(a)
-        b = T.newuserdata(0); debug.setmetatable(b, tt); nb = T.udataval(b)
-        c = T.newuserdata(0); debug.setmetatable(c, tt); nc = T.udataval(c)
-
-        -- create userdata without meta table
-        x = T.newuserdata(4)
-        y = T.newuserdata(0)
-
-        checkerr("FILE%* expected, got userdata", io.input, a)
-        checkerr("FILE%* expected, got userdata", io.input, x)
-
-        assert(debug.getmetatable(x) == nil and debug.getmetatable(y) == nil)
-
-        d=T.ref(a);
-        e=T.ref(b);
-        f=T.ref(c);
-        t = {T.getref(d), T.getref(e), T.getref(f)}
-        assert(t[1] == a and t[2] == b and t[3] == c)
-
-        t=nil; a=nil; c=nil;
-        T.unref(e); T.unref(f)
-
-        collectgarbage()
-
-        -- check that unref objects have been collected
-        assert(#cl == 1 and cl[1] == nc)
-
-        x = T.getref(d)
-        assert(type(x) == 'userdata' and debug.getmetatable(x) == tt)
-        x =nil
-        tt.b = b  -- create cycle
-        tt=nil    -- frees tt for GC
-        A = nil
-        b = nil
-        T.unref(d);
-        n5 = T.newuserdata(0)
-        debug.setmetatable(n5, {__gc=F})
-        n5 = T.udataval(n5)
-        collectgarbage()
-        assert(#cl == 4)
-        -- check order of collection
-        assert(cl[2] == n5 and cl[3] == nb and cl[4] == na)
-
-        collectgarbage"restart"
-
-
-        a, na = {}, {}
-        for i=30,1,-1 do
-          a[i] = T.newuserdata(0)
-          debug.setmetatable(a[i], {__gc=F})
-          na[i] = T.udataval(a[i])
-        end
-        cl = {}
-        a = nil; collectgarbage()
-        assert(#cl == 30)
-        for i=1,30 do assert(cl[i] == na[i]) end
-        na = nil
-
-
-        for i=2,Lim,2 do   -- unlock the other half
-          T.unref(Arr[i])
-        end
-
-        x = T.newuserdata(41); debug.setmetatable(x, {__gc=F})
-        assert(T.testC("objsize 2; return 1", x) == 41)
-        cl = {}
-        a = {[x] = 1}
-        x = T.udataval(x)
-        collectgarbage()
-        -- old 'x' cannot be collected ('a' still uses it)
-        assert(#cl == 0)
-        for n in pairs(a) do a[n] = nil end
-        collectgarbage()
-        assert(#cl == 1 and cl[1] == x)   -- old 'x' must be collected
-    `;
-    lualib.luaL_openlibs(L);
-    ltests.luaopen_tests(L);
-    if (lauxlib.luaL_loadstring(L, to_luastring(prefix + luaCode)) === lua.LUA_ERRSYNTAX)
-        throw new SyntaxError(lua.lua_tojsstring(L, -1));
-    lua.lua_call(L, 0, 0);
-});
-
-
-test.skip("[test-suite] api: test whether udate collection frees memory in the right time", () => {
-    let L = lauxlib.luaL_newstate();
-    if (!L) throw Error("failed to create lua state");
-
-    let luaCode = `
-        do
-          collectgarbage();
-          collectgarbage();
-          local x = collectgarbage("count");
-          local a = T.newuserdata(5001)
-          assert(T.testC("objsize 2; return 1", a) == 5001)
-          assert(collectgarbage("count") >= x+4)
-          a = nil
-          collectgarbage();
-          assert(collectgarbage("count") <= x+1)
-          -- udata without finalizer
-          x = collectgarbage("count")
-          collectgarbage("stop")
-          for i=1,1000 do T.newuserdata(0) end
-          assert(collectgarbage("count") > x+10)
-          collectgarbage()
-          assert(collectgarbage("count") <= x+1)
-          -- udata with finalizer
-          collectgarbage()
-          x = collectgarbage("count")
-          collectgarbage("stop")
-          a = {__gc = function () end}
-          for i=1,1000 do debug.setmetatable(T.newuserdata(0), a) end
-          assert(collectgarbage("count") >= x+10)
-          collectgarbage()  -- this collection only calls TM, without freeing memory
-          assert(collectgarbage("count") >= x+10)
-          collectgarbage()  -- now frees memory
-          assert(collectgarbage("count") <= x+1)
-          collectgarbage("restart")
-        end
-    `;
-    lualib.luaL_openlibs(L);
-    ltests.luaopen_tests(L);
-    if (lauxlib.luaL_loadstring(L, to_luastring(prefix + luaCode)) === lua.LUA_ERRSYNTAX)
-        throw new SyntaxError(lua.lua_tojsstring(L, -1));
-    lua.lua_call(L, 0, 0);
-});
-
-
 test("[test-suite] api: testing lua_equal", () => {
     let L = lauxlib.luaL_newstate();
     if (!L) throw Error("failed to create lua state");
@@ -1194,111 +905,6 @@ test("[test-suite] api: testing lua_equal", () => {
         throw new SyntaxError(lua.lua_tojsstring(L, -1));
     lua.lua_call(L, 0, 0);
 });
-
-
-test("[test-suite] api: testing lua_equal with fallbacks", () => {
-    let L = lauxlib.luaL_newstate();
-    if (!L) throw Error("failed to create lua state");
-
-    let luaCode = `
-        do
-          local map = {}
-          local t = {__eq = function (a,b) return map[a] == map[b] end}
-          local function f(x)
-            local u = T.newuserdata(0)
-            debug.setmetatable(u, t)
-            map[u] = x
-            return u
-          end
-          assert(f(10) == f(10))
-          assert(f(10) ~= f(11))
-          assert(T.testC("compare EQ 2 3; return 1", f(10), f(10)))
-          assert(not T.testC("compare EQ 2 3; return 1", f(10), f(20)))
-          t.__eq = nil
-          assert(f(10) ~= f(10))
-        end
-    `;
-    lualib.luaL_openlibs(L);
-    ltests.luaopen_tests(L);
-    if (lauxlib.luaL_loadstring(L, to_luastring(prefix + luaCode)) === lua.LUA_ERRSYNTAX)
-        throw new SyntaxError(lua.lua_tojsstring(L, -1));
-    lua.lua_call(L, 0, 0);
-});
-
-
-test("[test-suite] api: testing changing hooks during hooks", () => {
-    let L = lauxlib.luaL_newstate();
-    if (!L) throw Error("failed to create lua state");
-
-    let luaCode = `
-        _G.t = {}
-        T.sethook([[
-          # set a line hook after 3 count hooks
-          sethook 4 0 '
-            getglobal t;
-            pushvalue -3; append -2
-            pushvalue -2; append -2
-          ']], "c", 3)
-        local a = 1   -- counting
-        a = 1   -- counting
-        a = 1   -- count hook (set line hook)
-        a = 1   -- line hook
-        a = 1   -- line hook
-        debug.sethook()
-        t = _G.t
-        assert(t[1] == "line")
-        line = t[2]
-        assert(t[3] == "line" and t[4] == line + 1)
-        assert(t[5] == "line" and t[6] == line + 2)
-        assert(t[7] == nil)
-    `;
-    lualib.luaL_openlibs(L);
-    ltests.luaopen_tests(L);
-    if (lauxlib.luaL_loadstring(L, to_luastring(prefix + luaCode)) === lua.LUA_ERRSYNTAX)
-        throw new SyntaxError(lua.lua_tojsstring(L, -1));
-    lua.lua_call(L, 0, 0);
-});
-
-
-test.skip("[test-suite] api: testing errors during GC", () => {
-    let L = lauxlib.luaL_newstate();
-    if (!L) throw Error("failed to create lua state");
-
-    let luaCode = `
-        do   -- testing errors during GC
-          local a = {}
-          for i=1,20 do
-            a[i] = T.newuserdata(i)   -- creates several udata
-          end
-          for i=1,20,2 do   -- mark half of them to raise errors during GC
-            debug.setmetatable(a[i], {__gc = function (x) error("error inside gc") end})
-          end
-          for i=2,20,2 do   -- mark the other half to count and to create more garbage
-            debug.setmetatable(a[i], {__gc = function (x) load("A=A+1")() end})
-          end
-          _G.A = 0
-          a = 0
-          while 1 do
-            local stat, msg = pcall(collectgarbage)
-            if stat then
-              break   -- stop when no more errors
-            else
-              a = a + 1
-              assert(string.find(msg, "__gc"))
-            end
-          end
-          assert(a == 10)  -- number of errors
-
-          assert(A == 10)  -- number of normal collections
-        end
-    `;
-    lualib.luaL_openlibs(L);
-    ltests.luaopen_tests(L);
-    if (lauxlib.luaL_loadstring(L, to_luastring(prefix + luaCode)) === lua.LUA_ERRSYNTAX)
-        throw new SyntaxError(lua.lua_tojsstring(L, -1));
-    lua.lua_call(L, 0, 0);
-});
-
 
 test("[test-suite] api: test for userdata vals", () => {
     let L = lauxlib.luaL_newstate();
@@ -1321,66 +927,6 @@ test("[test-suite] api: test for userdata vals", () => {
         throw new SyntaxError(lua.lua_tojsstring(L, -1));
     lua.lua_call(L, 0, 0);
 });
-
-
-test("[test-suite] api: testing multiple states", () => {
-    let L = lauxlib.luaL_newstate();
-    if (!L) throw Error("failed to create lua state");
-
-    let luaCode = `
-        T.closestate(T.newstate());
-        L1 = T.newstate()
-        assert(L1)
-
-        assert(T.doremote(L1, "X='a'; return 'a'") == 'a')
-
-
-        assert(#pack(T.doremote(L1, "function f () return 'alo', 3 end; f()")) == 0)
-
-        a, b = T.doremote(L1, "return f()")
-        assert(a == 'alo' and b == '3')
-
-        T.doremote(L1, "_ERRORMESSAGE = nil")
-        -- error: 'sin' is not defined
-        a, _, b = T.doremote(L1, "return sin(1)")
-        assert(a == nil and b == 2)   -- 2 == run-time error
-
-        -- error: syntax error
-        a, b, c = T.doremote(L1, "return a+")
-        assert(a == nil and c == 3 and type(b) == "string")   -- 3 == syntax error
-
-        T.loadlib(L1)
-        a, b, c = T.doremote(L1, [[
-          string = require'string'
-          a = require'_G'; assert(a == _G and require("_G") == a)
-          -- io = require'io'; assert(type(io.read) == "function")
-          -- assert(require("io") == io)
-          a = require'table'; assert(type(a.insert) == "function")
-          a = require'debug'; assert(type(a.getlocal) == "function")
-          a = require'math'; assert(type(a.sin) == "function")
-          return string.sub('okinama', 1, 2)
-        ]])
-        assert(a == "ok")
-
-        T.closestate(L1);
-
-
-        L1 = T.newstate()
-        T.loadlib(L1)
-        T.doremote(L1, "a = {}")
-        T.testC(L1, [[getglobal "a"; pushstring "x"; pushint 1;
-                     settable -3]])
-        assert(T.doremote(L1, "return a.x") == "1")
-
-        T.closestate(L1)
-    `;
-    lualib.luaL_openlibs(L);
-    ltests.luaopen_tests(L);
-    if (lauxlib.luaL_loadstring(L, to_luastring(prefix + luaCode)) === lua.LUA_ERRSYNTAX)
-        throw new SyntaxError(lua.lua_tojsstring(L, -1));
-    lua.lua_call(L, 0, 0);
-});
-
 
 test.skip("[test-suite] api: testing memory limits", () => {
     let L = lauxlib.luaL_newstate();
@@ -1443,21 +989,6 @@ test.skip("[test-suite] api: testing memory errors when creating a new state", (
     lua.lua_call(L, 0, 0);
 });
 
-test("[test-suite] api: get main thread from registry (at index LUA_RIDX_MAINTHREAD == 1)", () => {
-    let L = lauxlib.luaL_newstate();
-    if (!L) throw Error("failed to create lua state");
-
-    let luaCode = `
-        mt = T.testC("rawgeti R 1; return 1")
-        assert(type(mt) == "thread" and coroutine.running() == mt)
-    `;
-    lualib.luaL_openlibs(L);
-    ltests.luaopen_tests(L);
-    if (lauxlib.luaL_loadstring(L, to_luastring(prefix + memprefix + luaCode)) === lua.LUA_ERRSYNTAX)
-        throw new SyntaxError(lua.lua_tojsstring(L, -1));
-    lua.lua_call(L, 0, 0);
-});
-
 test.skip("[test-suite] api: test thread creation after stressing GC", () => {
     let L = lauxlib.luaL_newstate();
     if (!L) throw Error("failed to create lua state");
@@ -1502,112 +1033,6 @@ test.skip("[test-suite] api: testing memory x compiler", () => {
     lua.lua_call(L, 0, 0);
 });
 
-
-test.skip("[test-suite] api: testing memory x dofile", () => {
-    let L = lauxlib.luaL_newstate();
-    if (!L) throw Error("failed to create lua state");
-
-    let luaCode = `
-        local testprog = [[
-        local function foo () return end
-        local t = {"x"}
-        a = "aaa"
-        for i = 1, #t do a=a..t[i] end
-        return true
-        ]]
-
-        -- testing memory x dofile
-        _G.a = nil
-        local t =os.tmpname()
-        local f = assert(io.open(t, "w"))
-        f:write(testprog)
-        f:close()
-        testamem("dofile", function ()
-          local a = loadfile(t)
-          return a and a()
-        end)
-        assert(os.remove(t))
-        assert(_G.a == "aaax")
-    `;
-    lualib.luaL_openlibs(L);
-    ltests.luaopen_tests(L);
-    if (lauxlib.luaL_loadstring(L, to_luastring(prefix + memprefix + luaCode)) === lua.LUA_ERRSYNTAX)
-        throw new SyntaxError(lua.lua_tojsstring(L, -1));
-    lua.lua_call(L, 0, 0);
-});
-
-
-test.skip("[test-suite] api: other generic tests", () => {
-    let L = lauxlib.luaL_newstate();
-    if (!L) throw Error("failed to create lua state");
-
-    let luaCode = `
-        testamem("string creation", function ()
-          local a, b = string.gsub("alo alo", "(a)", function (x) return x..'b' end)
-          return (a == 'ablo ablo')
-        end)
-
-        testamem("dump/undump", function ()
-          local a = load(testprog)
-          local b = a and string.dump(a)
-          a = b and load(b)
-          return a and a()
-        end)
-
-        local t = os.tmpname()
-        testamem("file creation", function ()
-          local f = assert(io.open(t, 'w'))
-          assert (not io.open"nomenaoexistente")
-          io.close(f);
-          return not loadfile'nomenaoexistente'
-        end)
-        assert(os.remove(t))
-
-        testamem("table creation", function ()
-          local a, lim = {}, 10
-          for i=1,lim do a[i] = i; a[i..'a'] = {} end
-          return (type(a[lim..'a']) == 'table' and a[lim] == lim)
-        end)
-
-        testamem("constructors", function ()
-          local a = {10, 20, 30, 40, 50; a=1, b=2, c=3, d=4, e=5}
-          return (type(a) == 'table' and a.e == 5)
-        end)
-
-        local a = 1
-        close = nil
-        testamem("closure creation", function ()
-          function close (b,c)
-           return function (x) return a+b+c+x end
-          end
-          return (close(2,3)(4) == 10)
-        end)
-
-        testamem("coroutines", function ()
-          local a = coroutine.wrap(function ()
-                      coroutine.yield(string.rep("a", 10))
-                      return {}
-                    end)
-          assert(string.len(a()) == 10)
-          return a()
-        end)
-
-        do   -- auxiliary buffer
-          local lim = 100
-          local a = {}; for i = 1, lim do a[i] = "01234567890123456789" end
-          testamem("auxiliary buffer", function ()
-            return (#table.concat(a, ",") == 20*lim + lim - 1)
-          end)
-        end
-    `;
-    lualib.luaL_openlibs(L);
-    ltests.luaopen_tests(L);
-    if (lauxlib.luaL_loadstring(L, to_luastring(prefix + memprefix + luaCode)) === lua.LUA_ERRSYNTAX)
-        throw new SyntaxError(lua.lua_tojsstring(L, -1));
-    lua.lua_call(L, 0, 0);
-});
-
-
 test("[test-suite] api: testing some auxlib functions", () => {
     let L = lauxlib.luaL_newstate();
     if (!L) throw Error("failed to create lua state");
@@ -1624,66 +1049,6 @@ test("[test-suite] api: testing some auxlib functions", () => {
         assert(gsub("", "alo", "//") == "")
         assert(gsub("...", ".", "/.") == "/././.")
         assert(gsub("...", "...", "") == "")
-    `;
-    lualib.luaL_openlibs(L);
-    ltests.luaopen_tests(L);
-    if (lauxlib.luaL_loadstring(L, to_luastring(prefix + luaCode)) === lua.LUA_ERRSYNTAX)
-        throw new SyntaxError(lua.lua_tojsstring(L, -1));
-    lua.lua_call(L, 0, 0);
-});
-
-
-test("[test-suite] api: testing luaL_newmetatable", () => {
-    let L = lauxlib.luaL_newstate();
-    if (!L) throw Error("failed to create lua state");
-
-    let luaCode = `
-        local mt_xuxu, res, top = T.testC("newmetatable xuxu; gettop; return 3")
-        assert(type(mt_xuxu) == "table" and res and top == 3)
-        local d, res, top = T.testC("newmetatable xuxu; gettop; return 3")
-        assert(mt_xuxu == d and not res and top == 3)
-        d, res, top = T.testC("newmetatable xuxu1; gettop; return 3")
-        assert(mt_xuxu ~= d and res and top == 3)
-
-        x = T.newuserdata(0);
-        y = T.newuserdata(0);
-        T.testC("pushstring xuxu; gettable R; setmetatable 2", x)
-        assert(getmetatable(x) == mt_xuxu)
-
-        -- correct metatable
-        local res1, res2, top = T.testC([[testudata -1 xuxu
-                          testudata 2 xuxu
-                          gettop
-                          return 3]], x)
-        assert(res1 and res2 and top == 4)
-
-        -- wrong metatable
-        res1, res2, top = T.testC([[testudata -1 xuxu1
-                        testudata 2 xuxu1
-                        gettop
-                        return 3]], x)
-        assert(not res1 and not res2 and top == 4)
-
-        -- non-existent type
-        res1, res2, top = T.testC([[testudata -1 xuxu2
-                        testudata 2 xuxu2
-                        gettop
-                        return 3]], x)
-        assert(not res1 and not res2 and top == 4)
-
-        -- userdata has no metatable
-        res1, res2, top = T.testC([[testudata -1 xuxu
-                        testudata 2 xuxu
-                        gettop
-                        return 3]], y)
-        assert(not res1 and not res2 and top == 4)
-
-        -- erase metatables
-        do
-          local r = debug.getregistry()
-          assert(r.xuxu == mt_xuxu and r.xuxu1 == d)
-          r.xuxu = nil; r.xuxu1 = nil
-        end
     `;
     lualib.luaL_openlibs(L);
     ltests.luaopen_tests(L);

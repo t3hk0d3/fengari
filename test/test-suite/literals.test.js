@@ -61,68 +61,6 @@ test("[test-suite] literals: assume ASCII just for tests", () => {
     lua.lua_call(L, 0, 0);
 });
 
-
-test("[test-suite] literals: hexadecimal escapes", () => {
-    let L = lauxlib.luaL_newstate();
-    if (!L) throw Error("failed to create lua state");
-
-    let luaCode = `
-        assert("\\x00\\x05\\x10\\x1f\\x3C\\xfF\\xe8" == "\\0\\5\\16\\31\\60\\255\\232")
-
-        local function lexstring (x, y, n)
-          local f = assert(load('return ' .. x ..
-                    ', require"debug".getinfo(1).currentline', ''))
-          local s, l = f()
-          assert(s == y and l == n)
-        end
-
-        lexstring("'abc\\\\z  \\n   efg'", "abcefg", 2)
-        lexstring("'abc\\\\z  \\n\\n\\n'", "abc", 4)
-        lexstring("'\\\\z  \\n\\t\\f\\v\\n'",  "", 3)
-        lexstring("[[\\nalo\\nalo\\n\\n]]", "alo\\nalo\\n\\n", 5)
-        lexstring("[[\\nalo\\ralo\\n\\n]]", "alo\\nalo\\n\\n", 5)
-        lexstring("[[\\nalo\\ralo\\r\\n]]", "alo\\nalo\\n", 4)
-        lexstring("[[\\ralo\\n\\ralo\\r\\n]]", "alo\\nalo\\n", 4)
-        lexstring("[[alo]\\n]alo]]", "alo]\\n]alo", 2)
-
-assert("abc\\z
-        def\\z
-        ghi\\z
-       " == 'abcdefghi')
-    `;
-    lualib.luaL_openlibs(L);
-    if (lauxlib.luaL_loadstring(L, to_luastring(luaCode)) === lua.LUA_ERRSYNTAX)
-        throw new SyntaxError(lua.lua_tojsstring(L, -1));
-    lua.lua_call(L, 0, 0);
-});
-
-
-test("[test-suite] literals: UTF-8 sequences", () => {
-    let L = lauxlib.luaL_newstate();
-    if (!L) throw Error("failed to create lua state");
-
-    let luaCode = `
-        assert("\\u{0}\\u{00000000}\\x00\\0" == string.char(0, 0, 0, 0))
-
-        -- limits for 1-byte sequences
-        assert("\\u{0}\\u{7F}" == "\\x00\\z\\x7F")
-
-        -- limits for 2-byte sequences
-        assert("\\u{80}\\u{7FF}" == "\\xC2\\x80\\z\\xDF\\xBF")
-
-        -- limits for 3-byte sequences
-        assert("\\u{800}\\u{FFFF}" ==   "\\xE0\\xA0\\x80\\z\\xEF\\xBF\\xBF")
-
-        -- limits for 4-byte sequences
-        assert("\\u{10000}\\u{10FFFF}" == "\\xF0\\x90\\x80\\x80\\z\\xF4\\x8F\\xBF\\xBF")
-    `;
-    lualib.luaL_openlibs(L);
-    if (lauxlib.luaL_loadstring(L, to_luastring(luaCode)) === lua.LUA_ERRSYNTAX)
-        throw new SyntaxError(lua.lua_tojsstring(L, -1));
-    lua.lua_call(L, 0, 0);
-});
-
-
 test("[test-suite] literals: Error in escape sequences", () => {
     let L = lauxlib.luaL_newstate();
     if (!L) throw Error("failed to create lua state");
@@ -295,37 +233,6 @@ b = nil`;
     lua.lua_call(L, 0, 0);
 });
 
-
-test("[test-suite] literals: testing line ends", () => {
-    let L = lauxlib.luaL_newstate();
-    if (!L) throw Error("failed to create lua state");
-
-    let luaCode = `prog = [[
-a = 1        -- a comment
-b = 2
-
-
-x = [=[
-hi
-]=]
-y = "\\
-hello\\r\\n\\
-"
-return require"debug".getinfo(1).currentline
-]]
-
-for _, n in pairs{"\\n", "\\r", "\\n\\r", "\\r\\n"} do
-  local prog, nn = string.gsub(prog, "\\n", n)
-  assert(dostring(prog) == nn)
-  assert(_G.x == "hi\\n" and _G.y == "\\nhello\\r\\n\\n")
-end`;
-    lualib.luaL_openlibs(L);
-    if (lauxlib.luaL_loadstring(L, to_luastring(dostring + luaCode)) === lua.LUA_ERRSYNTAX)
-        throw new SyntaxError(lua.lua_tojsstring(L, -1));
-    lua.lua_call(L, 0, 0);
-});
-
-
 test("[test-suite] literals: testing comments and strings with long brackets", () => {
     let L = lauxlib.luaL_newstate();
     if (!L) throw Error("failed to create lua state");
@@ -354,32 +261,6 @@ error error]=]===]`;
         throw new SyntaxError(lua.lua_tojsstring(L, -1));
     lua.lua_call(L, 0, 0);
 });
-
-
-test("[test-suite] literals: generate all strings of four of these chars", () => {
-    let L = lauxlib.luaL_newstate();
-    if (!L) throw Error("failed to create lua state");
-
-    let luaCode = `local x = {"=", "[", "]", "\\n"}
-local len = 4
-local function gen (c, n)
-  if n==0 then coroutine.yield(c)
-  else
-    for _, a in pairs(x) do
-      gen(c..a, n-1)
-    end
-  end
-end
-
-for s in coroutine.wrap(function () gen("", len) end) do
-  assert(s == load("return [====[\\n"..s.."]====]", "")())
-end`;
-    lualib.luaL_openlibs(L);
-    if (lauxlib.luaL_loadstring(L, to_luastring(dostring + luaCode)) === lua.LUA_ERRSYNTAX)
-        throw new SyntaxError(lua.lua_tojsstring(L, -1));
-    lua.lua_call(L, 0, 0);
-});
-
 
 test("[test-suite] literals: testing %q x line ends", () => {
     let L = lauxlib.luaL_newstate();

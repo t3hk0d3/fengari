@@ -556,22 +556,3 @@ test.skip("[test-suite] strings: locale", () => {
         throw new SyntaxError(lua.lua_tojsstring(L, -1));
     lua.lua_call(L, 0, 0);
 });
-
-
-test("[test-suite] strings: bug in Lua 5.3.2: 'gmatch' iterator does not work across coroutines", () => {
-    let L = lauxlib.luaL_newstate();
-    if (!L) throw Error("failed to create lua state");
-
-    let luaCode = `
-        do
-          local f = string.gmatch("1 2 3 4 5", "%d+")
-          assert(f() == "1")
-          co = coroutine.wrap(f)
-          assert(co() == "2")
-        end
-    `;
-    lualib.luaL_openlibs(L);
-    if (lauxlib.luaL_loadstring(L, to_luastring(checkerror + luaCode)) === lua.LUA_ERRSYNTAX)
-        throw new SyntaxError(lua.lua_tojsstring(L, -1));
-    lua.lua_call(L, 0, 0);
-});

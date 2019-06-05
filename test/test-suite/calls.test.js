@@ -307,7 +307,6 @@ test("[test-suite] calls: test for generic load", () => {
 
         a = assert(load(read1(x), "modname", "t", _G))
         assert(a() == "\0" and _G.x == 33)
-        assert(debug.getinfo(a).source == "modname")
         -- cannot read text in binary mode
         cannotload("attempt to load a text chunk", load(read1(x), "modname", "b", {}))
         cannotload("attempt to load a text chunk", load(x, "modname", "b"))
@@ -364,15 +363,6 @@ test("[test-suite] calls: load when _ENV is not first upvalue", () => {
 
     let luaCode = `
         local x; XX = 123
-        local function h ()
-          local y=x   -- use 'x', so that it becomes 1st upvalue
-          return XX   -- global name
-        end
-        local d = string.dump(h)
-        x = load(d, "", "b")
-        assert(debug.getupvalue(x, 2) == '_ENV')
-        debug.setupvalue(x, 2, _G)
-        assert(x() == 123)
 
         assert(assert(load("return XX + ...", nil, nil, {XX = 13}))(4) == 17)
     `;
@@ -414,70 +404,6 @@ test("[test-suite] calls: test generic load with nested functions", () => {
         throw new SyntaxError(lua.lua_tojsstring(L, -1));
     lua.lua_call(L, 0, 0);
 });
-
-
-test("[test-suite] calls: test for dump/undump with upvalues", () => {
-    let L = lauxlib.luaL_newstate();
-    if (!L) throw Error("failed to create lua state");
-
-    let luaCode = `
-        local a, b = 20, 30
-        x = load(string.dump(function (x)
-          if x == "set" then a = 10+b; b = b+1 else
-          return a
-          end
-        end), "", "b", nil)
-        assert(x() == nil)
-        assert(debug.setupvalue(x, 1, "hi") == "a")
-        assert(x() == "hi")
-        assert(debug.setupvalue(x, 2, 13) == "b")
-        assert(not debug.setupvalue(x, 3, 10))   -- only 2 upvalues
-        x("set")
-        assert(x() == 23)
-        x("set")
-        assert(x() == 24)
-    `;
-    lualib.luaL_openlibs(L);
-    if (lauxlib.luaL_loadstring(L, to_luastring(luaCode)) === lua.LUA_ERRSYNTAX)
-        throw new SyntaxError(lua.lua_tojsstring(L, -1));
-    lua.lua_call(L, 0, 0);
-});
-
-
-test("[test-suite] calls: test for dump/undump with many upvalues", () => {
-    let L = lauxlib.luaL_newstate();
-    if (!L) throw Error("failed to create lua state");
-
-    let luaCode = `
-        do
-          local nup = 200    -- maximum number of local variables
-          local prog = {"local a1"}
-          for i = 2, nup do prog[#prog + 1] = ", a" .. i end
-          prog[#prog + 1] = " = 1"
-          for i = 2, nup do prog[#prog + 1] = ", " .. i end
-          local sum = 1
-          prog[#prog + 1] = "; return function () return a1"
-          for i = 2, nup do prog[#prog + 1] = " + a" .. i; sum = sum + i end
-          prog[#prog + 1] = " end"
-          prog = table.concat(prog)
-          local f = assert(load(prog))()
-          assert(f() == sum)
-
-          f = load(string.dump(f))   -- main chunk now has many upvalues
-          local a = 10
-          local h = function () return a end
-          for i = 1, nup do
-            debug.upvaluejoin(f, i, h, 1)
-          end
-          assert(f() == 10 * nup)
-        end
-    `;
-    lualib.luaL_openlibs(L);
-    if (lauxlib.luaL_loadstring(L, to_luastring(luaCode)) === lua.LUA_ERRSYNTAX)
-        throw new SyntaxError(lua.lua_tojsstring(L, -1));
-    lua.lua_call(L, 0, 0);
-});
-
 
 test("[test-suite] calls: test for long method names", () => {
     let L = lauxlib.luaL_newstate();

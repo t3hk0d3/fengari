@@ -206,40 +206,6 @@ test("[test-suite] goto: testing closing of upvalues", () => {
 
         local a = foo()
         assert(#a == 6)
-
-        -- all functions share same 'a'
-        for i = 2, 6 do
-          assert(debug.upvalueid(a[1], 1) == debug.upvalueid(a[i], 1))
-        end
-
-        -- 'b' and 'c' are shared among some of them
-        for i = 2, 6 do
-          -- only a[1] uses external 'b'/'b'
-          assert(debug.upvalueid(a[1], 2) ~= debug.upvalueid(a[i], 2))
-          assert(debug.upvalueid(a[1], 3) ~= debug.upvalueid(a[i], 3))
-        end
-
-        for i = 3, 5, 2 do
-          -- inner functions share 'b'/'c' with previous ones
-          assert(debug.upvalueid(a[i], 2) == debug.upvalueid(a[i - 1], 2))
-          assert(debug.upvalueid(a[i], 3) == debug.upvalueid(a[i - 1], 3))
-          -- but not with next ones
-          assert(debug.upvalueid(a[i], 2) ~= debug.upvalueid(a[i + 1], 2))
-          assert(debug.upvalueid(a[i], 3) ~= debug.upvalueid(a[i + 1], 3))
-        end
-
-        -- only external 'd' is shared
-        for i = 2, 6, 2 do
-          assert(debug.upvalueid(a[1], 4) == debug.upvalueid(a[i], 4))
-        end
-
-        -- internal 'd's are all different
-        for i = 3, 5, 2 do
-          for j = 1, 6 do
-            assert((debug.upvalueid(a[i], 4) == debug.upvalueid(a[j], 4))
-              == (i == j))
-          end
-        end
     `;
     lualib.luaL_openlibs(L);
     if (lauxlib.luaL_loadstring(L, to_luastring(luaCode)) === lua.LUA_ERRSYNTAX)

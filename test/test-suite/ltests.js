@@ -564,28 +564,19 @@ const getstate = function(L) {
 };
 
 const luaopen_base      = require("../../src/lbaselib.js").luaopen_base;
-const luaopen_coroutine = require("../../src/lcorolib.js").luaopen_coroutine;
-const luaopen_debug     = require("../../src/ldblib.js").luaopen_debug;
-const luaopen_io        = require("../../src/liolib.js").luaopen_io;
-const luaopen_os        = require("../../src/loslib.js").luaopen_os;
 const luaopen_math      = require("../../src/lmathlib.js").luaopen_math;
 const luaopen_string    = require("../../src/lstrlib.js").luaopen_string;
 const luaopen_table     = require("../../src/ltablib.js").luaopen_table;
-const luaopen_package   = require("../../src/loadlib.js").luaopen_package;
 
 const loadlib = function(L) {
     let libs = {
         "_G": luaopen_base,
-        "coroutine": luaopen_coroutine,
-        "debug": luaopen_debug,
-        "io": luaopen_io,
-        "os": luaopen_os,
         "math": luaopen_math,
         "string": luaopen_string,
         "table": luaopen_table
     };
     let L1 = getstate(L);
-    lauxlib.luaL_requiref(L1, to_luastring("package", true), luaopen_package, 0);
+    lauxlib.luaL_requiref(L1, to_luastring("table", true), luaopen_table, 0);
     assert(lua.lua_type(L1, -1) == lua.LUA_TTABLE);
     /* 'requiref' should not reload module already loaded... */
     lauxlib.luaL_requiref(L1, to_luastring("package", true), null, 1);    /* seg. fault if it reloads */
@@ -860,7 +851,7 @@ const tests_funcs = {
 };
 
 const luaB_opentests = function(L) {
-    lua.lua_atpanic(L, tpanic);
+   // lua.lua_atpanic(L, tpanic);
     lauxlib.luaL_newlib(L, tests_funcs);
     return 1;
 };

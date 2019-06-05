@@ -100,15 +100,13 @@ test('[test-suite] locals: test for global table of loaded chunks', () => {
     if (!L) throw Error("failed to create lua state");
 
     let luaCode = `
-        assert(getenv(load"a=3") == _G)
         local c = {}; local f = load("a = 3", nil, nil, c)
-        assert(getenv(f) == c)
         assert(c.a == nil)
         f()
         assert(c.a == 3)
     `;
     lualib.luaL_openlibs(L);
-    if (lauxlib.luaL_loadstring(L, to_luastring(getenv + luaCode)) === lua.LUA_ERRSYNTAX)
+    if (lauxlib.luaL_loadstring(L, to_luastring(luaCode)) === lua.LUA_ERRSYNTAX)
         throw new SyntaxError(lua.lua_tojsstring(L, -1));
     lua.lua_call(L, 0, 0);
 });
@@ -167,7 +165,6 @@ test('[test-suite] locals: testing lexical environments', () => {
               return function (x) return A .. x end
             end
           end
-          assert(getenv(foo) == mt)
           x = foo('hi'); assert(mt.A == 'hi' and A == 1000)
           assert(x('*') == mt.A .. '*')
 
