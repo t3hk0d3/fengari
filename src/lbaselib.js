@@ -486,6 +486,16 @@ const base_funcs = {
     "xpcall":         luaB_xpcall
 };
 
+// Core LUA functions supported by Stormworks
+const restricted_funcs = {
+    "ipairs":         luaB_ipairs,
+    "next":           luaB_next,
+    "pairs":          luaB_pairs,
+    "tonumber":       luaB_tonumber,
+    "tostring":       luaB_tostring,
+};
+
+
 const luaopen_base = function(L) {
     /* open lib into global table */
     lua_pushglobaltable(L);
@@ -499,4 +509,19 @@ const luaopen_base = function(L) {
     return 1;
 };
 
+
+const luaopen_restricted = function(L) {
+    /* open lib into global table */
+    lua_pushglobaltable(L);
+    luaL_setfuncs(L, restricted_funcs, 0);
+    /* set global _G */
+    lua_pushvalue(L, -1);
+    lua_setfield(L, -2, to_luastring("_G"));
+    /* set global _VERSION */
+    lua_pushliteral(L, LUA_VERSION);
+    lua_setfield(L, -2, to_luastring("_VERSION"));
+    return 1;
+};
+
 module.exports.luaopen_base = luaopen_base;
+module.exports.luaopen_restricted = luaopen_restricted;
